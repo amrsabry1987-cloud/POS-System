@@ -7,11 +7,7 @@ import { RefreshCw } from 'lucide-react';
 interface LogItem {
   id: string;
   ref: string;
-  // Replace:
-  //type: item.type,
-
-// With:
-type: "SALE" | "PURCHASE" | "CLIENT PAYMENT" | "SUPPLIER PAYMENT",
+  type: "SALE" | "PURCHASE" | "CLIENT PAYMENT" | "SUPPLIER PAYMENT";
   party: string;
   amount: number;
   date: string;
@@ -91,7 +87,7 @@ export default function TransactionsPage() {
       ...(invoices || []).map((i) => ({
         id: i.id,
         ref: i.invoice_number,
-        type: i.type.toUpperCase(): 'SALE' | 'PURCHASE',
+        type: i.type.toUpperCase() as 'SALE' | 'PURCHASE',
         party: i.entities?.name || t.walkIn,
         amount: i.total,
         date: i.created_at,
@@ -99,7 +95,7 @@ export default function TransactionsPage() {
       ...(payments || []).map((p) => ({
         id: p.id,
         ref: p.reference_number,
-        type: p.type === 'client_payment' ? 'CLIENT PAYMENT' : 'SUPPLIER PAYMENT',
+        type: (p.type === 'client_payment' ? 'CLIENT PAYMENT' : 'SUPPLIER PAYMENT') as LogItem['type'],
         party: p.entities?.name || '-',
         amount: p.amount,
         date: p.created_at,
