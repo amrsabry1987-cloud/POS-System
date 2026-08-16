@@ -8,10 +8,10 @@ interface LogItem {
   id: string;
   ref: string;
   // Replace:
-  type: item.type,
+  //type: item.type,
 
 // With:
-type: item.type: "SALE" | "PURCHASE" | "CLIENT PAYMENT" | "SUPPLIER PAYMENT",
+type: "SALE" | "PURCHASE" | "CLIENT PAYMENT" | "SUPPLIER PAYMENT",
   party: string;
   amount: number;
   date: string;
