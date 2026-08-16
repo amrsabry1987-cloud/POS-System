@@ -11,7 +11,7 @@ interface LogItem {
   type: item.type,
 
 // With:
-type: item.type as "SALE" | "PURCHASE" | "CLIENT PAYMENT" | "SUPPLIER PAYMENT",
+type: item.type: "SALE" | "PURCHASE" | "CLIENT PAYMENT" | "SUPPLIER PAYMENT",
   party: string;
   amount: number;
   date: string;
