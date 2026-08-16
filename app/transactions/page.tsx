@@ -7,7 +7,11 @@ import { RefreshCw } from 'lucide-react';
 interface LogItem {
   id: string;
   ref: string;
-  type: 'SALE' | 'PURCHASE' | 'CLIENT PAYMENT' | 'SUPPLIER PAYMENT';
+  // Replace:
+  type: item.type,
+
+// With:
+type: item.type as "SALE" | "PURCHASE" | "CLIENT PAYMENT" | "SUPPLIER PAYMENT",
   party: string;
   amount: number;
   date: string;
