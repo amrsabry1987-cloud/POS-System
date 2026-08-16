@@ -91,7 +91,7 @@ export default function TransactionsPage() {
       ...(invoices || []).map((i) => ({
         id: i.id,
         ref: i.invoice_number,
-        type: i.type.toUpperCase() as 'SALE' | 'PURCHASE',
+        type: i.type.toUpperCase(): 'SALE' | 'PURCHASE',
         party: i.entities?.name || t.walkIn,
         amount: i.total,
         date: i.created_at,
