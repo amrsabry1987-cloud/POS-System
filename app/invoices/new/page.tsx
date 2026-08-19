@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Plus, Trash2, ArrowLeft } from 'lucide-react';
@@ -95,7 +95,7 @@ const translations = {
   },
 };
 
-export default function NewInvoicePage() {
+function NewInvoiceContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const editId = searchParams.get('edit');
@@ -146,7 +146,6 @@ export default function NewInvoicePage() {
           .single();
 
         if (existingTx) {
-          // Fallback parsing if existing database value is stored differently
           const loadedType = existingTx.type === 'expense' ? 'expense' : existingTx.type;
           setType(loadedType);
           setSelectedEntityId(existingTx.entity_id || '');
@@ -173,7 +172,6 @@ export default function NewInvoicePage() {
     (e) => e.type === (type === 'sale' ? 'client' : 'supplier')
   );
 
-  // 1. Filter products based on selected invoice type/category
   const filteredProducts = products.filter((p) => {
     if (type === 'expense') {
       return p.category === 'expenses' || p.category === 'expense';
@@ -220,9 +218,8 @@ export default function NewInvoicePage() {
 
     let txId = editId;
 
-    // Build payload ensuring schema enum compatibility
     const transactionPayload = {
-      type: type, // Ensure DB enum accepts 'expense' (or check if DB uses 'expense' enum)
+      type: type,
       entity_id: selectedEntityId || null,
       subtotal,
       discount,
@@ -234,7 +231,6 @@ export default function NewInvoicePage() {
     };
 
     if (editId) {
-      // 1a. Update Existing Header
       const { error: txErr } = await supabase
         .from('transactions')
         .update(transactionPayload)
@@ -246,10 +242,8 @@ export default function NewInvoicePage() {
         return;
       }
 
-      // Clear existing item rows prior to re-inserting
       await supabase.from('transaction_items').delete().eq('transaction_id', editId);
     } else {
-      // 1b. Insert New Transaction Header
       const invoiceNumber = `${prefix}-${Date.now().toString().slice(-6)}`;
       const { data: tx, error: txErr } = await supabase
         .from('transactions')
@@ -270,7 +264,6 @@ export default function NewInvoicePage() {
       txId = tx.id;
     }
 
-    // 2. Insert Items & Adjust Stock
     for (const item of items) {
       await supabase.from('transaction_items').insert([
         {
@@ -291,7 +284,6 @@ export default function NewInvoicePage() {
       }
     }
 
-    // 3. Update Entity Balance if applicable
     if (selectedEntityId && type !== 'expense') {
       const selectedEntity = entities.find((e) => e.id === selectedEntityId);
       if (selectedEntity) {
@@ -325,7 +317,6 @@ export default function NewInvoicePage() {
         onSubmit={handleSubmit}
         className="bg-white dark:bg-slate-900 p-6 rounded-xl border border-slate-200 dark:border-slate-800 space-y-6"
       >
-        {/* Transaction Type Selection */}
         <div className="grid grid-cols-3 gap-4">
           <button
             type="button"
@@ -374,7 +365,6 @@ export default function NewInvoicePage() {
           </button>
         </div>
 
-        {/* Entity Select (Conditional for Sale / Purchase) */}
         {type !== 'expense' && (
           <div>
             <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">
@@ -396,7 +386,6 @@ export default function NewInvoicePage() {
           </div>
         )}
 
-        {/* Item Rows Table */}
         <div className="space-y-3">
           <div className="flex justify-between items-center">
             <h3 className="font-semibold text-sm text-slate-800 dark:text-slate-200">
@@ -479,7 +468,6 @@ export default function NewInvoicePage() {
           </table>
         </div>
 
-        {/* Calculation Totals */}
         <div className="border-t border-slate-200 dark:border-slate-800 pt-4 space-y-2 max-w-xs ml-auto rtl:mr-auto rtl:ml-0 text-sm">
           <div className="flex justify-between text-slate-600 dark:text-slate-400">
             <span>{t.subtotal}</span>
@@ -528,5 +516,13 @@ export default function NewInvoicePage() {
         </button>
       </form>
     </div>
+  );
+}
+
+export default function NewInvoicePage() {
+  return (
+    <Suspense fallback={<div className="p-6 text-center text-sm text-slate-500">Loading form...</div>}>
+      <NewInvoiceContent />
+    </Suspense>
   );
 }
