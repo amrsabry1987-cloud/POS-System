@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
-import { Plus, Search, Package, AlertTriangle, ArrowUpDown, RefreshCw } from 'lucide-react';
+import { Plus, Search, RefreshCw, Edit, Check, X } from 'lucide-react';
 
 interface Product {
   id: string;
@@ -25,7 +25,8 @@ const translations = {
     subtitle: 'Manage catalog, pricing, and stock levels',
     refreshTable: 'Refresh Table',
     addProduct: 'Add Product',
-    searchPlaceholder: 'Search by name, SKU, or barcode...',
+    editProduct: 'Edit Product',
+    searchPlaceholder: 'Search by name...',
     totalProducts: 'Total Products:',
     colSkuBarcode: 'SKU / Barcode',
     colProductName: 'Product Name',
@@ -34,20 +35,18 @@ const translations = {
     colSellingPrice: 'Selling Price',
     colStock: 'Stock',
     colStatus: 'Status',
+    colActions: 'Actions',
     loading: 'Loading products...',
     noProducts: 'No products found. Click "Add Product" to add your first item.',
     outOfStock: 'Out of Stock',
     lowStock: 'Low Stock',
     inStock: 'In Stock',
+    inactive: 'Inactive',
     currency: 'EGP',
     // Modal Translations
     addNewProduct: 'Add New Product',
     productName: 'Product Name *',
     productNamePlaceholder: 'e.g. Beckman Reagent Kit',
-    skuCode: 'SKU Code',
-    skuPlaceholder: 'SKU-1001',
-    barcode: 'Barcode',
-    barcodePlaceholder: '6291000281',
     category: 'Category',
     unit: 'Unit',
     unitPlaceholder: 'pcs, box, kg',
@@ -55,17 +54,22 @@ const translations = {
     sellingPrice: 'Selling Price (EGP) *',
     initialStock: 'Initial Stock',
     minStockAlert: 'Minimum Alert Stock',
+    isActiveStatus: 'Product Active Status',
+    activeLabel: 'Active',
+    inactiveLabel: 'Inactive',
     cancel: 'Cancel',
     saveProduct: 'Save Product',
+    updateProduct: 'Update Product',
     nameRequired: 'Product name is required',
-    errorCreating: 'Error creating product: ',
+    errorSaving: 'Error saving product: ',
   },
   ar: {
     title: 'المنتجات والمخزون',
     subtitle: 'إدارة كتالوج المنتجات، الأسعار، ومستويات المخزون',
     refreshTable: 'تحديث الجدول',
     addProduct: 'إضافة منتج',
-    searchPlaceholder: 'البحث بالاسم، الكود (SKU)، أو البارکود...',
+    editProduct: 'تعديل منتج',
+    searchPlaceholder: 'البحث بالاسم...',
     totalProducts: 'إجمالي المنتجات:',
     colSkuBarcode: 'الكود / الباركوّد',
     colProductName: 'اسم المنتج',
@@ -74,20 +78,18 @@ const translations = {
     colSellingPrice: 'سعر البيع',
     colStock: 'المخزون',
     colStatus: 'الحالة',
+    colActions: 'إجراءات',
     loading: 'جاري تحميل المنتجات...',
     noProducts: 'لم يتم العثور على منتجات. انقر على "إضافة منتج" لإضافة أول عنصر.',
     outOfStock: 'نفد المخزون',
     lowStock: 'مخزون منخفض',
     inStock: 'متوفر',
+    inactive: 'غير نشط',
     currency: 'ج.م',
     // Modal Translations
     addNewProduct: 'إضافة منتج جديد',
     productName: 'اسم المنتج *',
     productNamePlaceholder: 'مثال: كاشف معامل بيكج',
-    skuCode: 'رمز SKU',
-    skuPlaceholder: 'SKU-1001',
-    barcode: 'الباركوّد',
-    barcodePlaceholder: '6291000281',
     category: 'الفئة',
     unit: 'وحدة القياس',
     unitPlaceholder: 'قطعة، صندوق، كجم',
@@ -95,11 +97,26 @@ const translations = {
     sellingPrice: 'سعر البيع (ج.م) *',
     initialStock: 'المخزون الأولي',
     minStockAlert: 'حد تنبيه نقص المخزون',
+    isActiveStatus: 'حالة حالة المنتج (نشط)',
+    activeLabel: 'نشط',
+    inactiveLabel: 'غير نشط',
     cancel: 'إلغاء',
     saveProduct: 'حفظ المنتج',
+    updateProduct: 'تحديث المنتج',
     nameRequired: 'اسم المنتج مطلوب',
-    errorCreating: 'خطأ أثناء إنشاء المنتج: ',
+    errorSaving: 'خطأ أثناء حفظ المنتج: ',
   },
+};
+
+const initialFormState = {
+  name: '',
+  category: 'General',
+  unit: 'pcs',
+  purchase_price: 0,
+  selling_price: 0,
+  stock: 0,
+  min_stock: 5,
+  is_active: true,
 };
 
 export default function ProductsPage() {
@@ -107,9 +124,9 @@ export default function ProductsPage() {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [lang, setLang] = useState<'en' | 'ar'>('en');
 
-  // Detect active language from local storage or html dir
   useEffect(() => {
     const updateLanguage = () => {
       const storedLang = localStorage.getItem('app_lang');
@@ -130,18 +147,8 @@ export default function ProductsPage() {
 
   const t = translations[lang];
 
-  // New Product Form State
-  const [formData, setFormData] = useState({
-    name: '',
-    sku: '',
-    barcode: '',
-    category: 'General',
-    unit: 'pcs',
-    purchase_price: 0,
-    selling_price: 0,
-    stock: 0,
-    min_stock: 5,
-  });
+  // Form State
+  const [formData, setFormData] = useState(initialFormState);
 
   // Fetch products from Supabase
   const fetchProducts = async () => {
@@ -163,47 +170,73 @@ export default function ProductsPage() {
     fetchProducts();
   }, []);
 
+  // Open Modal for Creating
+  const handleOpenCreateModal = () => {
+    setEditingProduct(null);
+    setFormData(initialFormState);
+    setIsModalOpen(true);
+  };
+
+  // Open Modal for Editing
+  const handleOpenEditModal = (product: Product) => {
+    setEditingProduct(product);
+    setFormData({
+      name: product.name || '',
+      category: product.category || 'General',
+      unit: product.unit || 'pcs',
+      purchase_price: product.purchase_price || 0,
+      selling_price: product.selling_price || 0,
+      stock: product.stock || 0,
+      min_stock: product.min_stock || 5,
+      is_active: product.is_active ?? true,
+    });
+    setIsModalOpen(true);
+  };
+
   // Handle Input Changes
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-    const { name, value } = e.target;
+    const { name, value, type } = e.target;
     setFormData((prev) => ({
       ...prev,
-      [name]: e.target.type === 'number' ? parseFloat(value) || 0 : value,
+      [name]: type === 'number' ? parseFloat(value) || 0 : value,
     }));
   };
 
-  // Submit New Product to Supabase
+  // Submit Form (Insert or Update)
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.name) return alert(t.nameRequired);
 
-    const { error } = await supabase.from('products').insert([formData]);
+    if (editingProduct) {
+      // Update Existing Product
+      const { error } = await supabase
+        .from('products')
+        .update(formData)
+        .eq('id', editingProduct.id);
 
-    if (error) {
-      alert(t.errorCreating + error.message);
+      if (error) {
+        alert(t.errorSaving + error.message);
+      } else {
+        setIsModalOpen(false);
+        fetchProducts();
+      }
     } else {
-      setIsModalOpen(false);
-      setFormData({
-        name: '',
-        sku: '',
-        barcode: '',
-        category: 'General',
-        unit: 'pcs',
-        purchase_price: 0,
-        selling_price: 0,
-        stock: 0,
-        min_stock: 5,
-      });
-      fetchProducts();
+      // Insert New Product
+      const { error } = await supabase.from('products').insert([formData]);
+
+      if (error) {
+        alert(t.errorSaving + error.message);
+      } else {
+        setIsModalOpen(false);
+        setFormData(initialFormState);
+        fetchProducts();
+      }
     }
   };
 
   // Filter products by search query
-  const filteredProducts = products.filter(
-    (p) =>
-      p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (p.sku && p.sku.toLowerCase().includes(searchQuery.toLowerCase())) ||
-      (p.barcode && p.barcode.toLowerCase().includes(searchQuery.toLowerCase()))
+  const filteredProducts = products.filter((p) =>
+    p.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   return (
@@ -223,7 +256,7 @@ export default function ProductsPage() {
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
           </button>
           <button
-            onClick={() => setIsModalOpen(true)}
+            onClick={handleOpenCreateModal}
             className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
           >
             <Plus className="w-4 h-4" />
@@ -262,18 +295,19 @@ export default function ProductsPage() {
                 <th className="p-4 text-right rtl:text-left">{t.colSellingPrice}</th>
                 <th className="p-4 text-center">{t.colStock}</th>
                 <th className="p-4 text-center">{t.colStatus}</th>
+                <th className="p-4 text-center">{t.colActions}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
               {loading ? (
                 <tr>
-                  <td colSpan={7} className="p-8 text-center text-slate-500">
+                  <td colSpan={8} className="p-8 text-center text-slate-500">
                     {t.loading}
                   </td>
                 </tr>
               ) : filteredProducts.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="p-8 text-center text-slate-500">
+                  <td colSpan={8} className="p-8 text-center text-slate-500">
                     {t.noProducts}
                   </td>
                 </tr>
@@ -301,7 +335,11 @@ export default function ProductsPage() {
                         {product.stock} {product.unit}
                       </td>
                       <td className="p-4 text-center">
-                        {isOutOfStock ? (
+                        {!product.is_active ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400">
+                            {t.inactive}
+                          </span>
+                        ) : isOutOfStock ? (
                           <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400">
                             {t.outOfStock}
                           </span>
@@ -315,6 +353,15 @@ export default function ProductsPage() {
                           </span>
                         )}
                       </td>
+                      <td className="p-4 text-center">
+                        <button
+                          onClick={() => handleOpenEditModal(product)}
+                          className="p-1.5 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/50 rounded-lg transition-colors"
+                          title={t.editProduct}
+                        >
+                          <Edit className="w-4 h-4" />
+                        </button>
+                      </td>
                     </tr>
                   );
                 })
@@ -324,21 +371,24 @@ export default function ProductsPage() {
         </div>
       </div>
 
-      {/* Add Product Modal */}
+      {/* Add / Edit Product Modal */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="bg-white dark:bg-slate-900 rounded-xl shadow-xl w-full max-w-lg overflow-hidden border border-slate-200 dark:border-slate-800">
             <div className="p-6 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center">
-              <h2 className="text-lg font-bold text-slate-800 dark:text-slate-100">{t.addNewProduct}</h2>
+              <h2 className="text-lg font-bold text-slate-800 dark:text-slate-100">
+                {editingProduct ? t.editProduct : t.addNewProduct}
+              </h2>
               <button
                 onClick={() => setIsModalOpen(false)}
                 className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
               >
-                ✕
+                <X className="w-5 h-5" />
               </button>
             </div>
 
             <form onSubmit={handleSubmit} className="p-6 space-y-4">
+              {/* Name Field */}
               <div>
                 <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">
                   {t.productName}
@@ -354,35 +404,7 @@ export default function ProductsPage() {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">
-                    {t.skuCode}
-                  </label>
-                  <input
-                    type="text"
-                    name="sku"
-                    value={formData.sku}
-                    onChange={handleInputChange}
-                    className="w-full px-3 py-2 text-sm bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder={t.skuPlaceholder}
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">
-                    {t.barcode}
-                  </label>
-                  <input
-                    type="text"
-                    name="barcode"
-                    value={formData.barcode}
-                    onChange={handleInputChange}
-                    className="w-full px-3 py-2 text-sm bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder={t.barcodePlaceholder}
-                  />
-                </div>
-              </div>
-
+              {/* Category & Unit */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">
@@ -411,6 +433,7 @@ export default function ProductsPage() {
                 </div>
               </div>
 
+              {/* Purchase & Selling Prices */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">
@@ -441,6 +464,7 @@ export default function ProductsPage() {
                 </div>
               </div>
 
+              {/* Initial Stock & Min Stock Alert */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">
@@ -468,6 +492,26 @@ export default function ProductsPage() {
                 </div>
               </div>
 
+              {/* Active Toggle Button */}
+              <div className="flex items-center justify-between pt-2">
+                <span className="text-xs font-semibold text-slate-600 dark:text-slate-400">
+                  {t.isActiveStatus}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setFormData((prev) => ({ ...prev, is_active: !prev.is_active }))}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                    formData.is_active ? 'bg-blue-600' : 'bg-slate-300 dark:bg-slate-700'
+                  }`}
+                >
+                  <span
+                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                      formData.is_active ? 'translate-x-6 rtl:-translate-x-6' : 'translate-x-1 rtl:-translate-x-1'
+                    }`}
+                  />
+                </button>
+              </div>
+
               <div className="flex justify-end gap-3 pt-4 border-t border-slate-200 dark:border-slate-800">
                 <button
                   type="button"
@@ -480,7 +524,7 @@ export default function ProductsPage() {
                   type="submit"
                   className="px-4 py-2 text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white rounded-lg"
                 >
-                  {t.saveProduct}
+                  {editingProduct ? t.updateProduct : t.saveProduct}
                 </button>
               </div>
             </form>

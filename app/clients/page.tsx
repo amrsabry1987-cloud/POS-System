@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
-import { Plus, Search, Users, Truck, RefreshCw, Phone, Mail, MapPin } from 'lucide-react';
+import { Plus, Search, Users, Truck, RefreshCw, Phone, Mail, MapPin, Edit, CheckCircle2, XCircle } from 'lucide-react';
 
 interface Entity {
   id: string;
@@ -13,6 +13,7 @@ interface Entity {
   address: string;
   credit_limit: number;
   balance: number; // Positive = Client owes us / Negative = We owe Supplier
+  is_active: boolean;
   created_at: string;
 }
 
@@ -26,19 +27,24 @@ const translations = {
     refreshTable: 'Refresh Table',
     addClient: 'Add Client',
     addSupplier: 'Add Supplier',
+    editClient: 'Edit Client',
+    editSupplier: 'Edit Supplier',
     tabClients: 'Clients (Customers)',
     tabSuppliers: 'Suppliers (Vendors)',
     searchPlaceholderClient: 'Search clients by name or phone...',
     searchPlaceholderSupplier: 'Search suppliers by name or phone...',
+    showInactive: 'Show Inactive',
     total: 'Total:',
     colName: 'Name',
     colContact: 'Contact Info',
     colAddress: 'Address',
     colCreditLimit: 'Credit Limit',
     colCurrentBalance: 'Current Balance',
+    colStatus: 'Status',
+    colActions: 'Actions',
     loading: 'Loading records...',
-    noClients: 'No clients found. Click "Add Client" to create one.',
-    noSuppliers: 'No suppliers found. Click "Add Supplier" to create one.',
+    noClients: 'No clients found.',
+    noSuppliers: 'No suppliers found.',
     owesUs: '(Owes Us)',
     overpaid: '(Overpaid)',
     weOwe: '(We Owe)',
@@ -59,11 +65,14 @@ const translations = {
     creditLimit: 'Credit Limit (EGP)',
     openingBalance: 'Opening Balance (EGP)',
     balancePlaceholder: 'Positive = Owes us',
+    activeStatus: 'Active Account',
     cancel: 'Cancel',
     saveClient: 'Save Client',
     saveSupplier: 'Save Supplier',
     nameRequired: 'Name is required',
-    errorCreating: 'Error creating ',
+    errorCreating: 'Error saving ',
+    active: 'Active',
+    inactive: 'Inactive',
   },
   ar: {
     clientsTitle: 'إدارة العملاء',
@@ -73,19 +82,24 @@ const translations = {
     refreshTable: 'تحديث الجدول',
     addClient: 'إضافة عميل',
     addSupplier: 'إضافة مورد',
+    editClient: 'تعديل بيانات عميل',
+    editSupplier: 'تعديل بيانات مورد',
     tabClients: 'العملاء',
     tabSuppliers: 'الموردون',
     searchPlaceholderClient: 'البحث عن عميل بالاسم أو رقم الهاتف...',
     searchPlaceholderSupplier: 'البحث عن مورد بالاسم أو رقم الهاتف...',
+    showInactive: 'إظهار غير النشطين',
     total: 'الإجمالي:',
     colName: 'الاسم',
     colContact: 'بيانات الاتصال',
     colAddress: 'العنوان',
     colCreditLimit: 'الحد الائتماني',
     colCurrentBalance: 'الرصيد الحالي',
+    colStatus: 'الحالة',
+    colActions: 'إجراءات',
     loading: 'جاري تحميل السجلات...',
-    noClients: 'لم يتم العثور على عملاء. انقر على "إضافة عميل" لإنشاء حساب جديد.',
-    noSuppliers: 'لم يتم العثور على موردين. انقر على "إضافة مورد" لإنشاء حساب جديد.',
+    noClients: 'لم يتم العثور على عملاء.',
+    noSuppliers: 'لم يتم العثور على موردين.',
     owesUs: '(مستحق عليه)',
     overpaid: '(دفع زياده)',
     weOwe: '(مستحق له)',
@@ -106,11 +120,14 @@ const translations = {
     creditLimit: 'الحد الائتماني (ج.م)',
     openingBalance: 'الرصيد الافتتاحي (ج.م)',
     balancePlaceholder: 'قيمة موجبة = مستحق عليه',
+    activeStatus: 'حساب نشط',
     cancel: 'إلغاء',
     saveClient: 'حفظ العميل',
     saveSupplier: 'حفظ المورد',
     nameRequired: 'الاسم مطلوب',
-    errorCreating: 'خطأ أثناء إضافة ',
+    errorCreating: 'خطأ أثناء حفظ ',
+    active: 'نشط',
+    inactive: 'غير نشط',
   },
 };
 
@@ -119,7 +136,9 @@ export default function EntitiesPage() {
   const [entities, setEntities] = useState<Entity[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  const [showInactive, setShowInactive] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingEntityId, setEditingEntityId] = useState<string | null>(null);
   const [lang, setLang] = useState<'en' | 'ar'>('en');
 
   // Detect active language from local storage or html dir
@@ -143,7 +162,7 @@ export default function EntitiesPage() {
 
   const t = translations[lang];
 
-  // New Entity Form State
+  // Entity Form State
   const [formData, setFormData] = useState({
     name: '',
     phone: '',
@@ -151,6 +170,7 @@ export default function EntitiesPage() {
     address: '',
     credit_limit: 0,
     balance: 0,
+    is_active: true,
   });
 
   // Fetch Entities from Supabase
@@ -175,47 +195,100 @@ export default function EntitiesPage() {
   }, [activeTab]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-    const { name, value } = e.target;
-    setFormData((prev) => ({
-      ...prev,
-      [name]: e.target.type === 'number' ? parseFloat(value) || 0 : value,
-    }));
+    const { name, value, type } = e.target;
+    if (type === 'checkbox') {
+      const checked = (e.target as HTMLInputElement).checked;
+      setFormData((prev) => ({ ...prev, [name]: checked }));
+    } else {
+      setFormData((prev) => ({
+        ...prev,
+        [name]: type === 'number' ? parseFloat(value) || 0 : value,
+      }));
+    }
   };
 
-  // Submit New Entity
+  const handleOpenAddModal = () => {
+    setEditingEntityId(null);
+    setFormData({
+      name: '',
+      phone: '',
+      email: '',
+      address: '',
+      credit_limit: 0,
+      balance: 0,
+      is_active: true,
+    });
+    setIsModalOpen(true);
+  };
+
+  const handleOpenEditModal = (entity: Entity) => {
+    setEditingEntityId(entity.id);
+    setFormData({
+      name: entity.name || '',
+      phone: entity.phone || '',
+      email: entity.email || '',
+      address: entity.address || '',
+      credit_limit: entity.credit_limit || 0,
+      balance: entity.balance || 0,
+      is_active: entity.is_active ?? true,
+    });
+    setIsModalOpen(true);
+  };
+
+  // Submit Entity (Create or Update)
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.name) return alert(t.nameRequired);
 
-    const payload = {
-      ...formData,
-      type: activeTab,
-    };
+    if (editingEntityId) {
+      // Update existing entity
+      const { error } = await supabase
+        .from('entities')
+        .update({
+          name: formData.name,
+          phone: formData.phone,
+          email: formData.email,
+          address: formData.address,
+          credit_limit: formData.credit_limit,
+          balance: formData.balance,
+          is_active: formData.is_active,
+        })
+        .eq('id', editingEntityId);
 
-    const { error } = await supabase.from('entities').insert([payload]);
-
-    if (error) {
-      alert(t.errorCreating + activeTab + ': ' + error.message);
+      if (error) {
+        alert(t.errorCreating + activeTab + ': ' + error.message);
+      } else {
+        setIsModalOpen(false);
+        fetchEntities();
+      }
     } else {
-      setIsModalOpen(false);
-      setFormData({
-        name: '',
-        phone: '',
-        email: '',
-        address: '',
-        credit_limit: 0,
-        balance: 0,
-      });
-      fetchEntities();
+      // Create new entity
+      const payload = {
+        ...formData,
+        type: activeTab,
+      };
+
+      const { error } = await supabase.from('entities').insert([payload]);
+
+      if (error) {
+        alert(t.errorCreating + activeTab + ': ' + error.message);
+      } else {
+        setIsModalOpen(false);
+        fetchEntities();
+      }
     }
   };
 
-  // Filter Entities
-  const filteredEntities = entities.filter(
-    (e) =>
+  // Filter Entities by Search Query and Active Status Boolean
+  const filteredEntities = entities.filter((e) => {
+    const matchesSearch =
       e.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (e.phone && e.phone.includes(searchQuery))
-  );
+      (e.phone && e.phone.includes(searchQuery));
+
+    const matchesStatus = showInactive ? true : e.is_active !== false;
+
+    return matchesSearch && matchesStatus;
+  });
 
   return (
     <div className="space-y-6">
@@ -238,7 +311,7 @@ export default function EntitiesPage() {
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
           </button>
           <button
-            onClick={() => setIsModalOpen(true)}
+            onClick={handleOpenAddModal}
             className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
           >
             <Plus className="w-4 h-4" />
@@ -273,17 +346,28 @@ export default function EntitiesPage() {
         </button>
       </div>
 
-      {/* Search Bar */}
-      <div className="flex items-center justify-between bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800">
-        <div className="relative w-full max-w-md">
-          <Search className="w-4 h-4 absolute left-3 rtl:left-auto rtl:right-3 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder={activeTab === 'client' ? t.searchPlaceholderClient : t.searchPlaceholderSupplier}
-            className="w-full pl-9 pr-4 rtl:pl-4 rtl:pr-9 py-2 text-sm bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
-          />
+      {/* Search & Filter Bar */}
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800">
+        <div className="flex items-center gap-4 flex-1">
+          <div className="relative w-full max-w-md">
+            <Search className="w-4 h-4 absolute left-3 rtl:left-auto rtl:right-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder={activeTab === 'client' ? t.searchPlaceholderClient : t.searchPlaceholderSupplier}
+              className="w-full pl-9 pr-4 rtl:pl-4 rtl:pr-9 py-2 text-sm bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+            />
+          </div>
+          <label className="flex items-center gap-2 text-xs font-medium text-slate-600 dark:text-slate-300 cursor-pointer select-none shrink-0">
+            <input
+              type="checkbox"
+              checked={showInactive}
+              onChange={(e) => setShowInactive(e.target.checked)}
+              className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 w-4 h-4"
+            />
+            <span>{t.showInactive}</span>
+          </label>
         </div>
         <div className="text-sm text-slate-500 font-medium">
           {t.total} <span className="text-slate-900 dark:text-slate-100 font-bold">{filteredEntities.length}</span>
@@ -301,18 +385,20 @@ export default function EntitiesPage() {
                 <th className="p-4">{t.colAddress}</th>
                 <th className="p-4 text-right rtl:text-left">{t.colCreditLimit}</th>
                 <th className="p-4 text-right rtl:text-left">{t.colCurrentBalance}</th>
+                <th className="p-4 text-center">{t.colStatus}</th>
+                <th className="p-4 text-center">{t.colActions}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
               {loading ? (
                 <tr>
-                  <td colSpan={5} className="p-8 text-center text-slate-500">
+                  <td colSpan={7} className="p-8 text-center text-slate-500">
                     {t.loading}
                   </td>
                 </tr>
               ) : filteredEntities.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="p-8 text-center text-slate-500">
+                  <td colSpan={7} className="p-8 text-center text-slate-500">
                     {activeTab === 'client' ? t.noClients : t.noSuppliers}
                   </td>
                 </tr>
@@ -362,6 +448,28 @@ export default function EntitiesPage() {
                         <span className="text-slate-400">{t.currency} 0</span>
                       )}
                     </td>
+                    <td className="p-4 text-center">
+                      {item.is_active !== false ? (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300">
+                          <CheckCircle2 className="w-3 h-3" />
+                          {t.active}
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400">
+                          <XCircle className="w-3 h-3" />
+                          {t.inactive}
+                        </span>
+                      )}
+                    </td>
+                    <td className="p-4 text-center">
+                      <button
+                        onClick={() => handleOpenEditModal(item)}
+                        className="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
+                        title={activeTab === 'client' ? t.editClient : t.editSupplier}
+                      >
+                        <Edit className="w-4 h-4" />
+                      </button>
+                    </td>
                   </tr>
                 ))
               )}
@@ -370,13 +478,19 @@ export default function EntitiesPage() {
         </div>
       </div>
 
-      {/* Add Entity Modal */}
+      {/* Add / Edit Entity Modal */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="bg-white dark:bg-slate-900 rounded-xl shadow-xl w-full max-w-lg overflow-hidden border border-slate-200 dark:border-slate-800">
             <div className="p-6 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center">
               <h2 className="text-lg font-bold text-slate-800 dark:text-slate-100">
-                {activeTab === 'client' ? t.addNewClient : t.addNewSupplier}
+                {editingEntityId
+                  ? activeTab === 'client'
+                    ? t.editClient
+                    : t.editSupplier
+                  : activeTab === 'client'
+                  ? t.addNewClient
+                  : t.addNewSupplier}
               </h2>
               <button
                 onClick={() => setIsModalOpen(false)}
@@ -471,6 +585,21 @@ export default function EntitiesPage() {
                     placeholder={t.balancePlaceholder}
                   />
                 </div>
+              </div>
+
+              {/* Active Indicator Checkbox */}
+              <div className="flex items-center gap-2 pt-1">
+                <input
+                  type="checkbox"
+                  id="is_active"
+                  name="is_active"
+                  checked={formData.is_active}
+                  onChange={handleInputChange}
+                  className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer"
+                />
+                <label htmlFor="is_active" className="text-sm font-medium text-slate-700 dark:text-slate-300 cursor-pointer select-none">
+                  {t.activeStatus}
+                </label>
               </div>
 
               <div className="flex justify-end gap-3 pt-4 border-t border-slate-200 dark:border-slate-800">

@@ -80,7 +80,7 @@ export default function Sidebar({
         } ${
           isOpen
             ? 'w-64 translate-x-0'
-            : 'w-64 -translate-x-full rtl:translate-x-full lg:translate-x-0'
+            : 'w-64 -translate-x-full rtl:translate-x-full lg:translate-x-0 lg:rtl:translate-x-0'
         }`}
       >
         {/* Header / Collapse Toggle */}

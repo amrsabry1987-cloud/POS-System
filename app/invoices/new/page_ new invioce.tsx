@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import { Plus, Trash2, ArrowLeft } from 'lucide-react';
 
 interface Entity {
@@ -15,7 +15,6 @@ interface Entity {
 interface Product {
   id: string;
   name: string;
-  category?: string; // product category filter (e.g. 'general' | 'expense')
   selling_price: number;
   purchase_price: number;
   stock: number;
@@ -31,80 +30,69 @@ interface ItemRow {
 const translations = {
   en: {
     backToInvoices: 'Back to Invoices',
-    pageTitleNew: 'Issue New Invoice',
-    pageTitleEdit: 'Edit Invoice',
+    pageTitle: 'Issue New Invoice',
     salesInvoice: '🛒 Sales Invoice (To Client)',
     purchaseOrder: '🛍️ Purchase Order (From Supplier)',
-    expenseInvoice: '💸 Internal Expense',
-    selectLabel: (type: string) =>
-      `Select ${type === 'sale' ? 'Client' : type === 'purchase' ? 'Supplier' : 'Party (Optional)'} *`,
+    selectLabel: (type: string) => `Select ${type === 'sale' ? 'Client' : 'Supplier'} *`,
     chooseParty: '-- Choose Party --',
     currBalance: 'Current Balance',
     lineItems: 'Invoice Line Items',
     addRow: 'Add Row',
-    colProduct: 'Product / Item',
+    colProduct: 'Product',
     colQty: 'Qty',
     colUnitPrice: 'Unit Price',
     colTotal: 'Total',
     selectProduct: '-- Select Product --',
-    stock: 'Stock Available',
+    stock: 'Stock',
     subtotal: 'Subtotal:',
     discount: 'Discount:',
     grandTotal: 'Grand Total:',
     amountPaidNow: 'Amount Paid Now:',
     balanceDue: 'Balance Due:',
     submitting: 'Processing Invoice...',
-    submitBtnNew: 'Complete & Save Invoice',
-    submitBtnEdit: 'Update Invoice',
+    submitBtn: 'Complete & Save Invoice',
     alertSelectParty: (type: string) => `Please select a ${type === 'sale' ? 'Client' : 'Supplier'}`,
     alertNoItems: 'Add at least one product item',
-    alertError: 'Error saving invoice: ',
+    alertError: 'Error creating invoice: ',
     currency: 'EGP',
   },
   ar: {
     backToInvoices: 'العودة إلى الفواتير',
-    pageTitleNew: 'إصدار فاتورة جديدة',
-    pageTitleEdit: 'تعديل الفاتورة',
+    pageTitle: 'إصدار فاتورة جديدة',
     salesInvoice: '🛒 فاتورة مبيعات (لعميل)',
     purchaseOrder: '🛍️ إذن توريد / شراء (من مورد)',
-    expenseInvoice: '💸 مصروفات داخلية',
-    selectLabel: (type: string) =>
-      `اختر ${type === 'sale' ? 'العميل' : type === 'purchase' ? 'المورد' : 'الطرف الثاني (اختياري)'} *`,
+    selectLabel: (type: string) => `اختر ${type === 'sale' ? 'العميل' : 'المورد'} *`,
     chooseParty: '-- اختر الطرف الثاني --',
     currBalance: 'الرصيد الحالي',
     lineItems: 'بنود الفاتورة',
     addRow: 'إضافة بند',
-    colProduct: 'المنتج / البند',
+    colProduct: 'المنتج',
     colQty: 'الكمية',
     colUnitPrice: 'سعر الوحدة',
     colTotal: 'الإجمالي',
     selectProduct: '-- اختر المنتج --',
-    stock: 'المخزون المتاح',
+    stock: 'المخزون Available',
     subtotal: 'الإجمالي الفرعي:',
     discount: 'الخصم:',
     grandTotal: 'الإجمالي النهائي:',
     amountPaidNow: 'المدفوع الآن:',
     balanceDue: 'المتبقي (الآجل):',
     submitting: 'جاري حفظ وحساب الفاتورة...',
-    submitBtnNew: 'حفظ وتأكيد الفاتورة',
-    submitBtnEdit: 'تحديث الفاتورة',
+    submitBtn: 'حفظ وتأكيد الفاتورة',
     alertSelectParty: (type: string) => `يرجى تحديد ${type === 'sale' ? 'العميل' : 'المورد'}`,
     alertNoItems: 'يرجى إضافة منتج واحد على الأقل',
-    alertError: 'حدث خطأ أثناء حفظ الفاتورة: ',
+    alertError: 'حدث خطأ أثناء إنشاء الفاتورة: ',
     currency: 'ج.م',
   },
 };
 
 export default function NewInvoicePage() {
   const router = useRouter();
-  const searchParams = useSearchParams();
-  const editId = searchParams.get('edit');
-
-  const [type, setType] = useState<'sale' | 'purchase' | 'expense'>('sale');
+  const [type, setType] = useState<'sale' | 'purchase'>('sale');
   const [entities, setEntities] = useState<Entity[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [selectedEntityId, setSelectedEntityId] = useState('');
-
+  
   const [items, setItems] = useState<ItemRow[]>([]);
   const [discount, setDiscount] = useState(0);
   const [paidAmount, setPaidAmount] = useState(0);
@@ -137,49 +125,11 @@ export default function NewInvoicePage() {
       const { data: productData } = await supabase.from('products').select('*');
       setEntities(entityData || []);
       setProducts(productData || []);
-
-      if (editId) {
-        const { data: existingTx } = await supabase
-          .from('transactions')
-          .select('*, transaction_items(*)')
-          .eq('id', editId)
-          .single();
-
-        if (existingTx) {
-          // Fallback parsing if existing database value is stored differently
-          const loadedType = existingTx.type === 'expense' ? 'expense' : existingTx.type;
-          setType(loadedType);
-          setSelectedEntityId(existingTx.entity_id || '');
-          setDiscount(existingTx.discount || 0);
-          setPaidAmount(existingTx.paid_amount || 0);
-
-          if (existingTx.transaction_items) {
-            setItems(
-              existingTx.transaction_items.map((it: any) => ({
-                product_id: it.product_id,
-                quantity: it.quantity,
-                unit_price: it.unit_price,
-                total_price: it.total_price,
-              }))
-            );
-          }
-        }
-      }
     }
     loadData();
-  }, [editId]);
+  }, []);
 
-  const filteredEntities = entities.filter(
-    (e) => e.type === (type === 'sale' ? 'client' : 'supplier')
-  );
-
-  // 1. Filter products based on selected invoice type/category
-  const filteredProducts = products.filter((p) => {
-    if (type === 'expense') {
-      return p.category === 'expenses' || p.category === 'expense';
-    }
-    return p.category !== 'expenses' && p.category !== 'expense';
-  });
+  const filteredEntities = entities.filter(e => e.type === (type === 'sale' ? 'client' : 'supplier'));
 
   const handleAddItem = () => {
     setItems([...items, { product_id: '', quantity: 1, unit_price: 0, total_price: 0 }]);
@@ -211,70 +161,44 @@ export default function NewInvoicePage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (type !== 'expense' && !selectedEntityId) return alert(t.alertSelectParty(type));
+    if (!selectedEntityId) return alert(t.alertSelectParty(type));
     if (items.length === 0) return alert(t.alertNoItems);
 
     setIsSubmitting(true);
-    const prefix = type === 'sale' ? 'INV' : type === 'purchase' ? 'PUR' : 'EXP';
+    const invoiceNumber = `${type === 'sale' ? 'INV' : 'PUR'}-${Date.now().toString().slice(-6)}`;
     const status = paidAmount >= grandTotal ? 'paid' : paidAmount > 0 ? 'partial' : 'unpaid';
 
-    let txId = editId;
+    // 1. Insert Transaction Header
+    const { data: tx, error: txErr } = await supabase
+      .from('transactions')
+      .insert([
+        {
+          invoice_number: invoiceNumber,
+          type,
+          entity_id: selectedEntityId,
+          subtotal,
+          discount,
+          tax: 0,
+          total: grandTotal,
+          paid_amount: paidAmount,
+          balance_due: balanceDue,
+          status,
+        },
+      ])
+      .select()
+      .single();
 
-    // Build payload ensuring schema enum compatibility
-    const transactionPayload = {
-      type: type, // Ensure DB enum accepts 'expense' (or check if DB uses 'expense' enum)
-      entity_id: selectedEntityId || null,
-      subtotal,
-      discount,
-      tax: 0,
-      total: grandTotal,
-      paid_amount: paidAmount,
-      balance_due: balanceDue,
-      status,
-    };
-
-    if (editId) {
-      // 1a. Update Existing Header
-      const { error: txErr } = await supabase
-        .from('transactions')
-        .update(transactionPayload)
-        .eq('id', editId);
-
-      if (txErr) {
-        alert(t.alertError + txErr.message);
-        setIsSubmitting(false);
-        return;
-      }
-
-      // Clear existing item rows prior to re-inserting
-      await supabase.from('transaction_items').delete().eq('transaction_id', editId);
-    } else {
-      // 1b. Insert New Transaction Header
-      const invoiceNumber = `${prefix}-${Date.now().toString().slice(-6)}`;
-      const { data: tx, error: txErr } = await supabase
-        .from('transactions')
-        .insert([
-          {
-            invoice_number: invoiceNumber,
-            ...transactionPayload,
-          },
-        ])
-        .select()
-        .single();
-
-      if (txErr) {
-        alert(t.alertError + txErr.message);
-        setIsSubmitting(false);
-        return;
-      }
-      txId = tx.id;
+    if (txErr) {
+      alert(t.alertError + txErr.message);
+      setIsSubmitting(false);
+      return;
     }
 
     // 2. Insert Items & Adjust Stock
     for (const item of items) {
       await supabase.from('transaction_items').insert([
         {
-          transaction_id: txId,
+          transaction_id: tx.id,
           product_id: item.product_id,
           quantity: item.quantity,
           unit_price: item.unit_price,
@@ -282,25 +206,21 @@ export default function NewInvoicePage() {
         },
       ]);
 
-      if (type !== 'expense') {
-        const p = products.find((prod) => prod.id === item.product_id);
-        if (p) {
-          const newStock = type === 'sale' ? p.stock - item.quantity : p.stock + item.quantity;
-          await supabase.from('products').update({ stock: newStock }).eq('id', p.id);
-        }
+      const p = products.find((prod) => prod.id === item.product_id);
+      if (p) {
+        const newStock = type === 'sale' ? p.stock - item.quantity : p.stock + item.quantity;
+        await supabase.from('products').update({ stock: newStock }).eq('id', p.id);
       }
     }
 
-    // 3. Update Entity Balance if applicable
-    if (selectedEntityId && type !== 'expense') {
-      const selectedEntity = entities.find((e) => e.id === selectedEntityId);
-      if (selectedEntity) {
-        const balanceChange = type === 'sale' ? balanceDue : -balanceDue;
-        await supabase
-          .from('entities')
-          .update({ balance: selectedEntity.balance + balanceChange })
-          .eq('id', selectedEntity.id);
-      }
+    // 3. Update Entity Running Balance
+    const selectedEntity = entities.find((e) => e.id === selectedEntityId);
+    if (selectedEntity) {
+      const balanceChange = type === 'sale' ? balanceDue : -balanceDue;
+      await supabase
+        .from('entities')
+        .update({ balance: selectedEntity.balance + balanceChange })
+        .eq('id', selectedEntity.id);
     }
 
     setIsSubmitting(false);
@@ -316,92 +236,56 @@ export default function NewInvoicePage() {
         >
           <ArrowLeft className="w-4 h-4 rtl:rotate-180" /> {t.backToInvoices}
         </button>
-        <h1 className="text-xl font-bold text-slate-800 dark:text-slate-100">
-          {editId ? t.pageTitleEdit : t.pageTitleNew}
-        </h1>
+        <h1 className="text-xl font-bold text-slate-800 dark:text-slate-100">{t.pageTitle}</h1>
       </div>
 
-      <form
-        onSubmit={handleSubmit}
-        className="bg-white dark:bg-slate-900 p-6 rounded-xl border border-slate-200 dark:border-slate-800 space-y-6"
-      >
+      <form onSubmit={handleSubmit} className="bg-white dark:bg-slate-900 p-6 rounded-xl border border-slate-200 dark:border-slate-800 space-y-6">
         {/* Transaction Type Selection */}
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-2 gap-4">
           <button
             type="button"
-            onClick={() => {
-              setType('sale');
-              setSelectedEntityId('');
-              setItems([]);
-            }}
+            onClick={() => { setType('sale'); setSelectedEntityId(''); }}
             className={`p-3 rounded-lg border font-bold text-sm ${
-              type === 'sale'
-                ? 'bg-blue-50 border-blue-600 text-blue-600 dark:bg-blue-950/40'
-                : 'border-slate-300 dark:border-slate-700'
+              type === 'sale' ? 'bg-blue-50 border-blue-600 text-blue-600 dark:bg-blue-950/40' : 'border-slate-300 dark:border-slate-700'
             }`}
           >
             {t.salesInvoice}
           </button>
           <button
             type="button"
-            onClick={() => {
-              setType('purchase');
-              setSelectedEntityId('');
-              setItems([]);
-            }}
+            onClick={() => { setType('purchase'); setSelectedEntityId(''); }}
             className={`p-3 rounded-lg border font-bold text-sm ${
-              type === 'purchase'
-                ? 'bg-blue-50 border-blue-600 text-blue-600 dark:bg-blue-950/40'
-                : 'border-slate-300 dark:border-slate-700'
+              type === 'purchase' ? 'bg-blue-50 border-blue-600 text-blue-600 dark:bg-blue-950/40' : 'border-slate-300 dark:border-slate-700'
             }`}
           >
             {t.purchaseOrder}
           </button>
-          <button
-            type="button"
-            onClick={() => {
-              setType('expense');
-              setSelectedEntityId('');
-              setItems([]);
-            }}
-            className={`p-3 rounded-lg border font-bold text-sm ${
-              type === 'expense'
-                ? 'bg-blue-50 border-blue-600 text-blue-600 dark:bg-blue-950/40'
-                : 'border-slate-300 dark:border-slate-700'
-            }`}
-          >
-            {t.expenseInvoice}
-          </button>
         </div>
 
-        {/* Entity Select (Conditional for Sale / Purchase) */}
-        {type !== 'expense' && (
-          <div>
-            <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">
-              {t.selectLabel(type)}
-            </label>
-            <select
-              required
-              value={selectedEntityId}
-              onChange={(e) => setSelectedEntityId(e.target.value)}
-              className="w-full px-3 py-2 text-sm bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg outline-none"
-            >
-              <option value="">{t.chooseParty}</option>
-              {filteredEntities.map((e) => (
-                <option key={e.id} value={e.id}>
-                  {e.name} ({t.currBalance}: {t.currency} {e.balance})
-                </option>
-              ))}
-            </select>
-          </div>
-        )}
+        {/* Entity Select */}
+        <div>
+          <label className="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">
+            {t.selectLabel(type)}
+          </label>
+          <select
+            required
+            value={selectedEntityId}
+            onChange={(e) => setSelectedEntityId(e.target.value)}
+            className="w-full px-3 py-2 text-sm bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg outline-none"
+          >
+            <option value="">{t.chooseParty}</option>
+            {filteredEntities.map((e) => (
+              <option key={e.id} value={e.id}>
+                {e.name} ({t.currBalance}: {t.currency} {e.balance})
+              </option>
+            ))}
+          </select>
+        </div>
 
         {/* Item Rows Table */}
         <div className="space-y-3">
           <div className="flex justify-between items-center">
-            <h3 className="font-semibold text-sm text-slate-800 dark:text-slate-200">
-              {t.lineItems}
-            </h3>
+            <h3 className="font-semibold text-sm text-slate-800 dark:text-slate-200">{t.lineItems}</h3>
             <button
               type="button"
               onClick={handleAddItem}
@@ -432,9 +316,9 @@ export default function NewInvoicePage() {
                       className="w-full p-1.5 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg outline-none"
                     >
                       <option value="">{t.selectProduct}</option>
-                      {filteredProducts.map((p) => (
+                      {products.map((p) => (
                         <option key={p.id} value={p.id}>
-                          {p.name} {type !== 'expense' ? `(${t.stock}: ${p.stock})` : ''}
+                          {p.name} ({t.stock}: {p.stock})
                         </option>
                       ))}
                     </select>
@@ -444,9 +328,7 @@ export default function NewInvoicePage() {
                       type="number"
                       min="1"
                       value={row.quantity}
-                      onChange={(e) =>
-                        handleItemChange(idx, 'quantity', parseInt(e.target.value) || 1)
-                      }
+                      onChange={(e) => handleItemChange(idx, 'quantity', parseInt(e.target.value) || 1)}
                       className="w-full p-1.5 text-xs text-center bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg font-mono outline-none"
                     />
                   </td>
@@ -455,9 +337,7 @@ export default function NewInvoicePage() {
                       type="number"
                       step="0.01"
                       value={row.unit_price}
-                      onChange={(e) =>
-                        handleItemChange(idx, 'unit_price', parseFloat(e.target.value) || 0)
-                      }
+                      onChange={(e) => handleItemChange(idx, 'unit_price', parseFloat(e.target.value) || 0)}
                       className="w-full p-1.5 text-xs text-right rtl:text-left bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg font-mono outline-none"
                     />
                   </td>
@@ -465,11 +345,7 @@ export default function NewInvoicePage() {
                     {t.currency} {row.total_price.toLocaleString()}
                   </td>
                   <td className="p-2 text-center">
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveItem(idx)}
-                      className="text-red-500 hover:text-red-700"
-                    >
+                    <button type="button" onClick={() => handleRemoveItem(idx)} className="text-red-500 hover:text-red-700">
                       <Trash2 className="w-4 h-4" />
                     </button>
                   </td>
@@ -483,9 +359,7 @@ export default function NewInvoicePage() {
         <div className="border-t border-slate-200 dark:border-slate-800 pt-4 space-y-2 max-w-xs ml-auto rtl:mr-auto rtl:ml-0 text-sm">
           <div className="flex justify-between text-slate-600 dark:text-slate-400">
             <span>{t.subtotal}</span>
-            <span className="font-mono font-semibold">
-              {t.currency} {subtotal.toLocaleString()}
-            </span>
+            <span className="font-mono font-semibold">{t.currency} {subtotal.toLocaleString()}</span>
           </div>
           <div className="flex justify-between items-center text-slate-600 dark:text-slate-400">
             <span>{t.discount}</span>
@@ -498,9 +372,7 @@ export default function NewInvoicePage() {
           </div>
           <div className="flex justify-between font-bold text-base text-slate-900 dark:text-slate-100 pt-2 border-t">
             <span>{t.grandTotal}</span>
-            <span className="font-mono text-blue-600">
-              {t.currency} {grandTotal.toLocaleString()}
-            </span>
+            <span className="font-mono text-blue-600">{t.currency} {grandTotal.toLocaleString()}</span>
           </div>
           <div className="flex justify-between items-center text-slate-600 dark:text-slate-400 pt-2">
             <span>{t.amountPaidNow}</span>
@@ -513,9 +385,7 @@ export default function NewInvoicePage() {
           </div>
           <div className="flex justify-between font-bold text-sm text-red-600 pt-1">
             <span>{t.balanceDue}</span>
-            <span className="font-mono">
-              {t.currency} {balanceDue.toLocaleString()}
-            </span>
+            <span className="font-mono">{t.currency} {balanceDue.toLocaleString()}</span>
           </div>
         </div>
 
@@ -524,7 +394,7 @@ export default function NewInvoicePage() {
           disabled={isSubmitting}
           className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg transition-colors"
         >
-          {isSubmitting ? t.submitting : editId ? t.submitBtnEdit : t.submitBtnNew}
+          {isSubmitting ? t.submitting : t.submitBtn}
         </button>
       </form>
     </div>
